@@ -8,6 +8,7 @@ import java.io.IOException;
 import static java.lang.System.*;
 
 public class EncodingGenerator  {
+    private static final int C = 100; // Mhz
     public static void main(String[] args) throws IOException {
         try (Scanner scanner = new Scanner(new File("input.txt"))) {
             new EncodingGenerator(scanner.nextLine());
@@ -96,19 +97,70 @@ public class EncodingGenerator  {
         encodingMap.put('9', (byte) 0x39);
     }
 
+    boolean[][] fourBFiveBTable = new boolean[][] {
+            new boolean[] {true, true, true, true, false},      // 0000 -> 11110
+            new boolean[] {false, true, false, false, true},    // 0001 -> 01001
+            new boolean[] {true, false, true, false, false},    // 0010 -> 10100
+            new boolean[] {true, false, true, false, true},     // 0011 -> 10101
+            new boolean[] {false, true, false, true, false},    // 0100 -> 01010
+            new boolean[] {false, true, false, true, true},     // 0101 -> 01011
+            new boolean[] {false, true, true, true, false},     // 0110 -> 01110
+            new boolean[] {false, true, true, true, true},      // 0111 -> 01111
+            new boolean[] {true, false, false, true, false},    // 1000 -> 10010
+            new boolean[] {true, false, false, true, true},     // 1001 -> 10011
+            new boolean[] {true, false, true, true, false},     // 1010 -> 10110
+            new boolean[] {true, false, true, true, true},      // 1011 -> 10111
+            new boolean[] {true, true, false, true, false},     // 1100 -> 11010
+            new boolean[] {true, true, false, true, true},      // 1101 -> 11011
+            new boolean[] {true, true, true, false, false},     // 1110 -> 11100
+            new boolean[] {true, true, true, false, true},      // 1111 -> 11101
+    };
+
     public EncodingGenerator(String text) {
         out.println("Input text: " + text);
         boolean[] bits = textToBits(text);
 
-        generateNRZ(bits);
-        generateRZ(bits);
-        generateAMI(bits);
-        generateNRZI(bits);
-        generateMLT3(bits);
-        generateM2(bits);
+        byte[] bytes = bitsToBytes(bits);
+        out.println("Hex: " + bytesToHex(bytes));
+        out.println("Bin: " + bytesToBin(bytes));
+        out.println("Message length: " + bytes.length + " bytes (" + bits.length + " bits)");
+
+        boolean[] fourBFiveBBits = fourBFiveB(bits);
+        out.println("4B/5B encoded hex: " + bitsToHex(fourBFiveBBits));
+        out.println("4B/5B encoded bin: " + bitsToBin(fourBFiveBBits));
+        out.println("4B/5B message length: " + fourBFiveBBits.length/8f + " bytes (" + fourBFiveBBits.length + " bits)");
+        out.printf(
+                "Redundancy: %s/%s = %s/%s = %.2f (%s%%)\n",
+                fourBFiveBBits.length/8f - bytes.length,
+                bytes.length,
+                fourBFiveBBits.length - bits.length,
+                bits.length,
+                1f*(fourBFiveBBits.length - bits.length)/bits.length,
+                100*(fourBFiveBBits.length - bits.length)/bits.length
+        );
+
+        out.println("Generating images...");
+
+        generateNRZ(bits, "nrz.png");
+        generateRZ(bits, "rz.png");
+        generateAMI(bits, "ami.png");
+        generateNRZI(bits, "nrzi.png");
+        generateMLT3(bits, "mlt3.png");
+        generateM2(bits, "m2.png");
+
+        generateNRZ(fourBFiveBBits, "nrz_4b5b.png");
+        generateRZ(fourBFiveBBits, "rz_4b5b.png");
+        generateAMI(fourBFiveBBits, "ami_4b5b.png");
+        generateNRZI(fourBFiveBBits, "nrzi_4b5b.png");
+        generateMLT3(fourBFiveBBits, "mlt3_4b5b.png");
+        generateM2(fourBFiveBBits, "m2_4b5b.png");
+
+        out.println("Images generated");
     }
 
-    private void generateNRZ(boolean[] bits) {
+    // f0 = C/2 (частота основной гармоники)
+    // fl = (самая длинная последовательность 1 или 0, )
+    private void generateNRZ(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -118,6 +170,11 @@ public class EncodingGenerator  {
             int stepSize = width/bits.length;
 
             drawBasicTemplate(g, bits, width, height);
+
+            int longestSequence = 0;
+
+            boolean sequenceBit = bits[0];
+            int sequenceLen = 0;
 
             for (int i = 0; i < bits.length; i++) {
                 boolean bit = bits[i];
@@ -131,15 +188,32 @@ public class EncodingGenerator  {
                     g.setColor(Color.black);
                     g.drawLine(i * stepSize, height/2 - height/4, i * stepSize, height/2 + height/4);
                 }
+
+                if (bit == sequenceBit) {
+                    sequenceLen++;
+                    if (sequenceLen > longestSequence)
+                        longestSequence = sequenceLen;
+                } else {
+
+                    sequenceLen = 1;
+                }
+                sequenceBit = bit;
             }
 
-            ImageIO.write(image, "png", new File("nrz.png"));
+            out.printf("%s -> main_freq = %d MHz, low_freq = %d MHz, high_freq = %d MHz, spectre = %d MHz\n",
+                    filename,
+                    C/2,
+                    longestSequence*2,
+                    7*C/2,
+                    (7*C/2 - longestSequence*2)
+            );
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate NRZ: " + e.getMessage());
         }
     }
 
-    private void generateRZ(boolean[] bits) {
+    private void generateRZ(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -165,13 +239,14 @@ public class EncodingGenerator  {
                 g.drawLine(i * stepSize, yPos, i * stepSize + stepSize/2, yPos);
             }
 
-            ImageIO.write(image, "png", new File("rz.png"));
+            out.printf("%s -> main_freq = %d MHz, low_freq = %d MHz, high_freq = %d MHz, spectre = %d MHz\n", filename, C, C/4, C, (C - C/4));
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate RZ: " + e.getMessage());
         }
     }
 
-    private void generateAMI(boolean[] bits) {
+    private void generateAMI(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -201,13 +276,14 @@ public class EncodingGenerator  {
                 }
             }
 
-            ImageIO.write(image, "png", new File("ami.png"));
+            out.printf("%s -> main_freq = %d MHz, low_freq = %d MHz, high_freq = %d MHz, spectre = %d MHz\n", filename, C, C/4, C/2, (C - C/4));
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate AMI: " + e.getMessage());
         }
     }
 
-    private void generateNRZI(boolean[] bits) {
+    private void generateNRZI(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -236,13 +312,13 @@ public class EncodingGenerator  {
                 }
             }
 
-            ImageIO.write(image, "png", new File("nrzi.png"));
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate NRZI: " + e.getMessage());
         }
     }
 
-    private void generateMLT3(boolean[] bits) {
+    private void generateMLT3(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -282,13 +358,13 @@ public class EncodingGenerator  {
                 }
             }
 
-            ImageIO.write(image, "png", new File("mlt3.png"));
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate MLT-3: " + e.getMessage());
         }
     }
 
-    private void generateM2(boolean[] bits) {
+    private void generateM2(boolean[] bits, String filename) {
         try {
             BufferedImage image = new BufferedImage(30*bits.length, 100, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = (Graphics2D) image.getGraphics();
@@ -319,10 +395,29 @@ public class EncodingGenerator  {
                 previous = bit;
             }
 
-            ImageIO.write(image, "png", new File("m2.png"));
+            ImageIO.write(image, "png", new File(filename));
         } catch(IOException e) {
             err.println("Could not generate M2: " + e.getMessage());
         }
+    }
+
+    private boolean[] fourBFiveB(boolean[] bits) {
+        if (bits.length % 4 != 0)
+            throw new IllegalArgumentException("The bits number must be multiple of 4, but it's actually " + bits.length);
+
+        boolean[] result = new boolean[bits.length*5/4];
+        int resultPtr = 0;
+        int srcPtr = 0;
+        while (srcPtr < bits.length) {
+            int tableIdx = (bits[srcPtr] ? 8 : 0) + (bits[srcPtr + 1] ? 4 : 0) + (bits[srcPtr + 2] ? 2 : 0) + (bits[srcPtr + 3] ? 1 : 0);
+            boolean[] encoded = fourBFiveBTable[tableIdx];
+            for (boolean b : encoded) {
+                result[resultPtr] = b;
+                resultPtr++;
+            }
+            srcPtr += 4;
+        }
+        return result;
     }
 
     private void drawBasicTemplate(Graphics2D g, boolean[] bits, int width, int height) {
@@ -369,4 +464,71 @@ public class EncodingGenerator  {
 
         return result;
     }
+
+    private byte[] bitsToBytes(boolean[] bits) {
+        if (bits.length % 8 != 0)
+            throw new IllegalArgumentException("Bits number must be multiple of 8, but it's actually " + bits.length);
+
+        byte[] result = new byte[bits.length/8];
+        int bitsPtr = 0;
+        int resultPtr = 0;
+        while (bitsPtr < bits.length) {
+            result[resultPtr] = (byte) (
+                    (bits[bitsPtr] ? 128 : 0) +
+                            (bits[bitsPtr + 1] ? 64 : 0) +
+                            (bits[bitsPtr + 2] ? 32 : 0) +
+                            (bits[bitsPtr + 3] ? 16 : 0) +
+                            (bits[bitsPtr + 4] ? 8 : 0) +
+                            (bits[bitsPtr + 5] ? 4 : 0) +
+                            (bits[bitsPtr + 6] ? 2 : 0) +
+                            (bits[bitsPtr + 7] ? 1 : 0)
+            );
+
+            bitsPtr += 8;
+            resultPtr++;
+        }
+        return result;
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder();
+        for (byte b : bytes)
+            builder.append(String.format("%02X ", b));
+        return builder.toString();
+    }
+
+    private String bytesToBin(byte[] bytes) {
+        StringBuilder builder = new StringBuilder();
+        for (byte b : bytes)
+            builder.append(String.format("%8s ", Integer.toBinaryString(b & 0xFF)));
+        return builder.toString();
+    }
+
+    private String bitsToHex(boolean[] bits) {
+        if (bits.length % 4 != 0)
+            throw new IllegalStateException("Bits number must be multiple of 4, but actually it's " + bits.length);
+
+        StringBuilder builder = new StringBuilder();
+        int bitPtr = 0;
+        while (bitPtr < bits.length) {
+            byte b = (byte) (
+                    (bits[bitPtr] ? 8 : 0) +
+                            (bits[bitPtr + 1] ? 4 : 0) +
+                            (bits[bitPtr + 2] ? 2 : 0) +
+                            (bits[bitPtr + 3] ? 1 : 0)
+            );
+            builder.append(String.format("%1X", b));
+            bitPtr += 4;
+        }
+
+        return builder.toString();
+    }
+
+    private String bitsToBin(boolean[] bits) {
+        StringBuilder builder = new StringBuilder();
+        for (boolean b : bits)
+            builder.append(b ? 1 : 0);
+        return builder.toString();
+    }
+
 }
