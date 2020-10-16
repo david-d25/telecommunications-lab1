@@ -117,8 +117,16 @@ public class EncodingGenerator  {
     };
 
     public EncodingGenerator(String text) {
-        out.println("Input text: " + text);
-        boolean[] bits = textToBits(text);
+        boolean[] bits;
+        if (text.startsWith("word:")) {
+            out.println("Input text: " + text.split(":")[1]);
+            bits = textToBits(text.split(":")[1]);
+        } else if (text.startsWith("bits:")) {
+            out.println("Input bits: " + text.split(":")[1]);
+            bits = textBitsToBits(text.split(":")[1]);
+        } else {
+            throw new IllegalStateException("Please, type 'word:' or 'bits:' at the start if the input");
+        }
 
         byte[] bytes = bitsToBytes(bits);
         out.println("Hex: " + bytesToHex(bytes));
@@ -126,6 +134,7 @@ public class EncodingGenerator  {
         out.println("Message length: " + bytes.length + " bytes (" + bits.length + " bits)");
 
         boolean[] fourBFiveBBits = fourBFiveB(bits);
+        fourBFiveBBits = completeArray(fourBFiveBBits, 4);
         out.println("4B/5B encoded hex: " + bitsToHex(fourBFiveBBits));
         out.println("4B/5B encoded bin: " + bitsToBin(fourBFiveBBits));
         out.println("4B/5B message length: " + fourBFiveBBits.length/8f + " bytes (" + fourBFiveBBits.length + " bits)");
@@ -465,6 +474,14 @@ public class EncodingGenerator  {
         return result;
     }
 
+    private boolean[] textBitsToBits(String text) {
+        boolean[] result = new boolean[text.length()];
+        int ptr = 0;
+        for (char c : text.toCharArray())
+            result[ptr++] = c == '1';
+        return result;
+    }
+
     private byte[] bitsToBytes(boolean[] bits) {
         if (bits.length % 8 != 0)
             throw new IllegalArgumentException("Bits number must be multiple of 8, but it's actually " + bits.length);
@@ -487,6 +504,13 @@ public class EncodingGenerator  {
             bitsPtr += 8;
             resultPtr++;
         }
+        return result;
+    }
+
+    private boolean[] completeArray(boolean[] src, int div) {
+        int additional = src.length % div;
+        boolean[] result = new boolean[src.length + additional];
+        System.arraycopy(src, 0, result, additional, src.length);
         return result;
     }
 
